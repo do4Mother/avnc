@@ -26,6 +26,7 @@ class AudioPlayer {
         const val TAG = "AudioPlayer"
         const val SAMPLE_RATE = 48000
         const val BYTES_PER_FRAME = 4 // 16-bit stereo
+        const val CHUNK_MS = 20
         const val QUEUE_CAPACITY = 16
         const val MASK32 = 0xFFFFFFFFL
     }
@@ -36,20 +37,27 @@ class AudioPlayer {
     @Volatile private var running = false
     private var thread: Thread? = null
     private var track: AudioTrack? = null
+    private var capacityFrames = 0
+    private var bufferFrames = 0
+    private var warnedWrite = false
 
     @Synchronized
     fun start() {
         if (running) return
-        val t = try {
-            createTrack()
+        var t: AudioTrack? = null
+        try {
+            t = createTrack()
+            if (t.state != AudioTrack.STATE_INITIALIZED) throw IllegalStateException("AudioTrack not initialized")
+            queue.clear()
+            t.play()
         } catch (e: Exception) {
-            Log.e(TAG, "Cannot create AudioTrack", e)
+            Log.e(TAG, "Cannot start AudioTrack", e)
+            try { t?.release() } catch (_: Exception) {}
             return
         }
         track = t
-        queue.clear()
+        capacityFrames = bufferFrames
         running = true
-        t.play()
         thread = Thread({ playLoop(t) }, "AudioPlayer").also { it.start() }
     }
 
@@ -83,13 +91,16 @@ class AudioPlayer {
                 break
             } ?: continue
 
-            // playbackHeadPosition is a 32-bit frame counter that wraps; subtract modulo 2^32.
-            val head = track.playbackHeadPosition.toLong() and MASK32
-            val bufferedFrames = (framesWritten - head) and MASK32
-            val bufferedMs = if (bufferedFrames > SAMPLE_RATE) 1000 // sanity clamp: 1 s
-                             else (bufferedFrames * 1000 / SAMPLE_RATE).toInt()
-
             try {
+                // playbackHeadPosition is a 32-bit frame counter that wraps; subtract modulo 2^32.
+                val head = track.playbackHeadPosition.toLong() and MASK32
+                val bufferedFrames = (framesWritten - head) and MASK32
+                val bufferedMs = if (bufferedFrames > capacityFrames) {
+                    // Implausible (head jumped, or is ahead of what we wrote): resync and treat as underrun.
+                    framesWritten = head
+                    0
+                } else (bufferedFrames * 1000 / SAMPLE_RATE).toInt()
+
                 when (val d = gate.decide(bufferedMs)) {
                     is Decision.Drop -> {}
                     is Decision.Prefill -> {
@@ -111,7 +122,10 @@ class AudioPlayer {
         var off = 0
         while (off < data.size && running) {
             val n = track.write(data, off, data.size - off)
-            if (n <= 0) break
+            if (n <= 0) {
+                if (n < 0 && !warnedWrite) { warnedWrite = true; Log.e(TAG, "AudioTrack.write failed: $n") }
+                break
+            }
             off += n
         }
         return off
@@ -120,8 +134,14 @@ class AudioPlayer {
     @Suppress("DEPRECATION")
     private fun createTrack(): AudioTrack {
         val minBuf = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT)
-        val wanted = 2 * HIGH_MS * SAMPLE_RATE / 1000 * BYTES_PER_FRAME
+        // The buffer (and, in MODE_STREAM, the start threshold which defaults to the buffer size) must
+        // stay within the drift gate's range: if the track only starts once N ms are buffered and N
+        // exceeds HIGH_MS, the gate drops chunks before the head ever moves -> permanent silence.
+        val wanted = (HIGH_MS + CHUNK_MS) * SAMPLE_RATE / 1000 * BYTES_PER_FRAME
         val bufBytes = max(minBuf, wanted)
+        bufferFrames = bufBytes / BYTES_PER_FRAME
+        if (minBuf > wanted)
+            Log.w(TAG, "Min buffer ($minBuf bytes) exceeds drift gate range ($wanted bytes); audio may stall")
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             return AudioTrack(AudioManager.STREAM_MUSIC, SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO,
@@ -144,6 +164,18 @@ class AudioPlayer {
                 .setTransferMode(AudioTrack.MODE_STREAM)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             b.setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-        return b.build()
+        val t = b.build()
+        if (t.state == AudioTrack.STATE_INITIALIZED) {
+            try {
+                val gateFrames = wanted / BYTES_PER_FRAME
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && bufferFrames > gateFrames)
+                    bufferFrames = t.setBufferSizeInFrames(gateFrames).coerceAtLeast(1)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                    t.setStartThresholdInFrames(TARGET_MS * SAMPLE_RATE / 1000)
+            } catch (e: Exception) {
+                Log.w(TAG, "Cannot tune AudioTrack buffer", e)
+            }
+        }
+        return t
     }
 }

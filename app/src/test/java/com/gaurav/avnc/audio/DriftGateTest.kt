@@ -25,4 +25,12 @@ class DriftGateTest {
         assertEquals(Decision.Write, gate.decide(80))
         assertEquals(Decision.Write, gate.decide(120))
     }
+
+    @Test
+    fun underrunClearsDropState() {
+        val gate = DriftGate()
+        assertEquals(Decision.Drop, gate.decide(170))
+        assertEquals(Decision.Prefill(80), gate.decide(0))
+        assertEquals(Decision.Write, gate.decide(120))
+    }
 }
