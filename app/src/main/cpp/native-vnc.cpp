@@ -22,6 +22,7 @@ struct JniContext {
     JavaVM *vm;                     //JVM Instance
     jclass managedCls;              //Managed `VncClient` class
     jmethodID cbFramebufferUpdated; //Cached reference to managed callback
+    jmethodID cbAudioData;          //Cached reference to managed callback
 
     [[nodiscard]]
     JNIEnv *getEnvUnchecked() const {
@@ -75,6 +76,7 @@ Java_com_gaurav_avnc_vnc_VncClient_initLibrary(JNIEnv *env, jclass clazz) {
 
     context.managedCls = (jclass) env->NewGlobalRef(clazz);
     context.cbFramebufferUpdated = env->GetMethodID(context.managedCls, "cbFinishedFrameBufferUpdate", "()V");
+    context.cbAudioData = env->GetMethodID(context.managedCls, "cbAudioData", "([B)V");
     //TODO: Cache more method IDs so we don't have to repeatedly search them
 
     rfbClientLog = &log_info;
@@ -298,6 +300,110 @@ static void announceDeviceScale(int percent) {
     }
 }
 
+/**
+ * QEMU audio extension (pseudo-encoding -259). The server acknowledges the
+ * pseudo-encoding with an empty rect of that encoding; we then send set-format
+ * (S16, 2 channels, 48 kHz) and enable. Audio arrives as message 255, sub-type 1.
+ * All header integers are big-endian.
+ */
+static const int QEMU_AUDIO_ENCODING = -259;
+static const uint8_t QEMU_MSG = 255;
+static const uint8_t QEMU_AUDIO_SUBTYPE = 1;
+static const uint16_t QEMU_AUDIO_OP_DATA = 2;
+static const uint32_t QEMU_AUDIO_MAX_CHUNK = 1024 * 1024;
+
+static int qemuAudioEncodings[2] = {0, 0};
+
+static rfbBool qemuAudioHandleEncoding(rfbClient *client, rfbFramebufferUpdateRectHeader *rect) {
+    if (rect->encoding != (uint32_t) QEMU_AUDIO_ENCODING)
+        return FALSE;
+
+    // The acknowledgement rect carries no payload.
+    auto ex = getClientExtension(client);
+    if (ex->audioWanted && !ex->audioAcked) {
+        // set-format: S16 (3), 2 channels, 48000 Hz
+        static const uint8_t setFormat[] = {QEMU_MSG, QEMU_AUDIO_SUBTYPE, 0, 2, 3, 2, 0x00, 0x00, 0xBB, 0x80};
+        static const uint8_t enable[] = {QEMU_MSG, QEMU_AUDIO_SUBTYPE, 0, 0};
+        if (!WriteToRFBServer(client, (const char *) setFormat, sizeof(setFormat)) ||
+            !WriteToRFBServer(client, (const char *) enable, sizeof(enable)))
+            return FALSE;
+        ex->audioAcked = true;
+    }
+    return TRUE;
+}
+
+static rfbBool qemuAudioHandleMessage(rfbClient *client, rfbServerToClientMsg *message) {
+    // LibVNCClient has read only the 1-byte message type at this point.
+    if (message->type != QEMU_MSG)
+        return FALSE;
+
+    uint8_t header[3]; // sub-type (u8), operation (u16)
+    if (!ReadFromRFBServer(client, (char *) header, sizeof(header)))
+        return FALSE;
+
+    if (header[0] != QEMU_AUDIO_SUBTYPE) {
+        rfbClientErr("Unsupported QEMU server message sub-type %d\n", header[0]);
+        return FALSE;
+    }
+
+    uint16_t op = (uint16_t) ((header[1] << 8) | header[2]);
+    if (op != QEMU_AUDIO_OP_DATA)
+        return TRUE; // begin (1) / end (0): hints only
+
+    uint8_t lenBytes[4];
+    if (!ReadFromRFBServer(client, (char *) lenBytes, sizeof(lenBytes)))
+        return FALSE;
+    uint32_t len = ((uint32_t) lenBytes[0] << 24) | ((uint32_t) lenBytes[1] << 16) |
+                   ((uint32_t) lenBytes[2] << 8) | (uint32_t) lenBytes[3];
+    if (len > QEMU_AUDIO_MAX_CHUNK) {
+        rfbClientErr("QEMU audio chunk too large: %u bytes\n", len);
+        return FALSE;
+    }
+    if (len == 0)
+        return TRUE;
+
+    auto data = (char *) malloc(len);
+    if (!data) {
+        rfbClientErr("qemuAudioHandleMessage: Unable to allocate memory for audio data\n");
+        return FALSE;
+    }
+    if (!ReadFromRFBServer(client, data, len)) {
+        free(data);
+        return FALSE;
+    }
+
+    auto env = context.getEnv();
+    jbyteArray bytes = env->NewByteArray((jsize) len);
+    if (!bytes) {
+        free(data);
+        rfbClientErr("qemuAudioHandleMessage: Unable to allocate memory for audio data\n");
+        return FALSE;
+    }
+    env->SetByteArrayRegion(bytes, 0, (jsize) len, reinterpret_cast<const jbyte *>(data));
+    free(data);
+
+    env->CallVoidMethod(getManagedClient(client), context.cbAudioData, bytes);
+    env->DeleteLocalRef(bytes);
+
+    // A managed exception, if any, stays pending and surfaces once we return to Java
+    // (this message is fully consumed, so no further JNI calls happen before that).
+    return TRUE;
+}
+
+static rfbClientProtocolExtension qemuAudioExtension = {
+        qemuAudioEncodings, qemuAudioHandleEncoding, qemuAudioHandleMessage
+};
+
+static void configureAudio(rfbClient *client, bool audio) {
+    static bool registered = false;
+    qemuAudioEncodings[0] = audio ? QEMU_AUDIO_ENCODING : 0;
+    getClientExtension(client)->audioWanted = audio;
+    if (!registered) {
+        rfbClientRegisterExtension(&qemuAudioExtension);
+        registered = true;
+    }
+}
+
 static void setCallbacks(rfbClient *client) {
     client->GetPassword = onGetPassword;
     client->GetCredential = onGetCredential;
@@ -341,7 +447,8 @@ extern "C"
 JNIEXPORT void JNICALL
 Java_com_gaurav_avnc_vnc_VncClient_nativeConfigure(JNIEnv * /*env*/, jobject /*thiz*/, jlong client_ptr,
                                                    jint securityType, jboolean use_local_cursor, jint image_quality,
-                                                   jboolean use_raw_encoding, jint device_scale) {
+                                                   jboolean use_raw_encoding, jint device_scale,
+                                                   jboolean audio) {
     auto client = (rfbClient *) client_ptr;
 
     // 0 means all auth types
@@ -356,6 +463,7 @@ Java_com_gaurav_avnc_vnc_VncClient_nativeConfigure(JNIEnv * /*env*/, jobject /*t
     }
 
     announceDeviceScale(device_scale);
+    configureAudio(client, audio);
 
     client->appData.qualityLevel = image_quality;
     if (use_raw_encoding)

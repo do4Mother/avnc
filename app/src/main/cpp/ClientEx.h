@@ -32,6 +32,11 @@ struct ClientEx {
 
     // Protects modification to framebuffer & cursor
     MUTEX(mutex);
+
+    // QEMU audio extension: audio requested for this connection, and whether
+    // the server's acknowledgement has been answered with set-format + enable.
+    bool audioWanted;
+    bool audioAcked;
 };
 
 const int ClientExTag = 1;
@@ -66,6 +71,8 @@ ClientEx *assignClientExtension(rfbClient *client) {
     if (ex) {
         INIT_MUTEX(ex->mutex);
         ex->cursor = nullptr;
+        ex->audioWanted = false;
+        ex->audioAcked = false;
         setClientExtension(client, ex);
     }
     return ex;

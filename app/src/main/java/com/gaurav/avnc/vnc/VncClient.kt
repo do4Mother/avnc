@@ -54,6 +54,9 @@ class VncClient(private val observer: Observer) {
         fun onFramebufferSizeChanged(width: Int, height: Int)
         fun onPointerMoved(x: Int, y: Int)
         fun onBell()
+
+        /** One chunk of S16LE stereo 48 kHz PCM from the server. Called on the VNC thread. */
+        fun onAudioData(data: ByteArray) {}
     }
 
     /**
@@ -127,13 +130,15 @@ class VncClient(private val observer: Observer) {
      *
      * @param securityType RFB security type to use.
      * @param remoteScale Scale (percent) announced to the server; 0 uses the display density.
+     * @param audio Ask the server for desktop audio (QEMU audio extension).
      */
-    fun configure(securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, remoteScale: Int = 0) {
+    fun configure(securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, remoteScale: Int = 0,
+                  audio: Boolean = false) {
         stateLock.read {
             if (!connected && !destroyed) {
                 val deviceScale = if (remoteScale > 0) remoteScale
                 else (Resources.getSystem().displayMetrics.density * 100).roundToInt()
-                nativeConfigure(nativePtr, securityType, useLocalCursor, imageQuality, useRawEncoding, deviceScale)
+                nativeConfigure(nativePtr, securityType, useLocalCursor, imageQuality, useRawEncoding, deviceScale, audio)
             }
         }
     }
@@ -350,7 +355,7 @@ class VncClient(private val observer: Observer) {
     }
 
     private external fun nativeClientCreate(): Long
-    private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, deviceScale: Int)
+    private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, deviceScale: Int, audio: Boolean)
     private external fun nativeInit(clientPtr: Long, host: String, port: Int): Boolean
     private external fun nativeSetDest(clientPtr: Long, host: String, port: Int)
     private external fun nativeProcessServerMessage(clientPtr: Long): Boolean
@@ -404,6 +409,9 @@ class VncClient(private val observer: Observer) {
 
     @Keep
     private fun cbBell() = observer.onBell()
+
+    @Keep
+    private fun cbAudioData(data: ByteArray) = observer.onAudioData(data)
 
     @Keep
     private fun cbHandleCursorPos(x: Int, y: Int) {
