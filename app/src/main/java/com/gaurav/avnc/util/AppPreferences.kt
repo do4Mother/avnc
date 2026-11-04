@@ -103,6 +103,7 @@ class AppPreferences(context: Context) {
         var showVirtualKeys by BooleanPref("run_info_show_virtual_keys", true)
         var virtualKeysTextBoxVisible by BooleanPref("run_info_virtual_keys_textbox_visible", false)
         var toolbarOpenerBtnVerticalBias by FloatPref("run_info_toolbar_opener_vertical_bias", .5f)
+        var hasRequestedNotificationPermission by BooleanPref("run_info_has_requested_notification_permission", false)
     }
 
     val ui = UI()

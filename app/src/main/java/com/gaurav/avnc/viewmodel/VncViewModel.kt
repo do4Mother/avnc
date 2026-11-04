@@ -17,6 +17,8 @@ import android.widget.Toast
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.gaurav.avnc.R
+import com.gaurav.avnc.audio.AudioPlayer
+import com.gaurav.avnc.audio.AudioService
 import com.gaurav.avnc.model.LoginInfo
 import com.gaurav.avnc.model.ServerProfile
 import com.gaurav.avnc.session.Messenger
@@ -217,8 +219,32 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
 
     val capturePointer = monitor(state, hasWindowFocus, viewerHelpIsVisible) { resolveCapturePointer() }
 
+    /**
+     * Whether desktop audio is currently being played for this session.
+     */
+    val audioActive = MutableLiveData(false)
+
+    /**
+     * Set when user ends the session from the audio notification.
+     * Activity should finish instead of auto-reconnecting.
+     */
+    val sessionEndedByUser = MutableLiveData(false)
+
+    /**
+     * Written on main thread, read on the VNC receiver thread in [RemoteSessionObserver.onAudioData].
+     */
+    @Volatile
+    private var audioPlayer: AudioPlayer? = null
+
+    /**
+     * Our handler for the notification Disconnect action. Kept as a field so that we
+     * only unregister it if it is still ours (another session may have replaced it).
+     */
+    private val notificationDisconnectHandler: () -> Unit = { disconnectFromNotification() }
+
     override fun onCleared() {
         super.onCleared()
+        stopAudio()
         session.stop()
     }
 
@@ -253,6 +279,46 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
     }
 
     suspend fun getProfileById(id: Long) = serverProfileDao.getByID(id)
+
+    /**
+     * Invoked (on main thread) when user taps Disconnect in the audio notification.
+     * Ends the session for good, i.e. without auto-reconnect.
+     */
+    fun disconnectFromNotification() {
+        if (sessionEndedByUser.value == true) return
+        sessionEndedByUser.value = true
+        stopAudio()
+        session.stop()
+    }
+
+    /**************************************************************************
+     * Audio
+     **************************************************************************/
+
+    private fun startAudio() {
+        if (!profile.audio || audioPlayer != null || sessionEndedByUser.value == true)
+            return
+
+        val player = AudioPlayer()
+        player.start()
+        audioPlayer = player
+
+        AudioService.onDisconnect = notificationDisconnectHandler
+        AudioService.start(app, profile.name.ifBlank { profile.host })
+        audioActive.value = true
+    }
+
+    private fun stopAudio() {
+        val player = audioPlayer ?: return
+        audioPlayer = null
+        player.stop()
+
+        if (AudioService.onDisconnect === notificationDisconnectHandler) {
+            AudioService.onDisconnect = null
+            AudioService.stop(app)
+        }
+        audioActive.value = false
+    }
 
     /**************************************************************************
      * Frame management
@@ -456,6 +522,7 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
                 this@VncViewModel.messenger = messenger
                 state.value = State.Connected
 
+                startAudio()
                 rememberLoginInfo()
 
                 // Initial clipboard sync, slightly delayed to allow extended clipboard negotiations
@@ -467,6 +534,7 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
         override fun onDisconnected() {
             // Block until main thread is synchronised with disconnected state
             runBlocking(Dispatchers.Main) {
+                stopAudio()
                 state.value = State.Disconnected
                 client = null
                 messenger = null
@@ -526,6 +594,11 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
 
         override fun onPointerMoved(x: Int, y: Int) {
             refreshFrameView()
+        }
+
+        override fun onAudioData(data: ByteArray) {
+            // Called on the VNC receiver thread; write() never blocks.
+            audioPlayer?.write(data)
         }
 
         override fun onBell() {

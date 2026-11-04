@@ -8,10 +8,13 @@
 
 package com.gaurav.avnc.ui.vnc
 
+import android.Manifest
 import android.animation.LayoutTransition
 import android.annotation.SuppressLint
 import android.app.PictureInPictureParams
+import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Parcelable
@@ -22,12 +25,15 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.os.BundleCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.Observer
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.gaurav.avnc.R
@@ -81,6 +87,12 @@ class VncActivity : AppCompatActivity() {
     private var wasConnectedWhenActivityStopped = false
     private var wasKeyboardVisibleWhenActivityStopped = false
     private var onStartTime = 0L
+    private val notificationPermissionRequest =
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* Denial does not stop audio */ }
+
+    // Observed forever, so that a Disconnect from the notification finishes the activity
+    // even while it is stopped in the background.
+    private val sessionEndedByUserObserver = Observer<Boolean> { if (it) finish() }
 
     /**********************************************************************************************
      * Activity Lifecycle
@@ -110,11 +122,18 @@ class VncActivity : AppCompatActivity() {
         viewModel.state.observe(this) { onClientStateChanged(it) }
         viewModel.profileLive.observe(this) { onProfileUpdated() }
         viewModel.capturePointer.observe(this) { updatePointerCapture(it) }
+        viewModel.audioActive.observe(this) { onAudioActiveChanged(it) }
+        viewModel.sessionEndedByUser.observeForever(sessionEndedByUserObserver)
 
         hasActivityRestarted = savedInstanceState != null
         oldState = (savedInstanceState ?: intent.extras)?.let {
             BundleCompat.getParcelable(it, SAVED_STATE_KEY, SavedState::class.java)
         }
+    }
+
+    override fun onDestroy() {
+        viewModel.sessionEndedByUser.removeObserver(sessionEndedByUserObserver)
+        super.onDestroy()
     }
 
     override fun onStart() {
@@ -277,6 +296,10 @@ class VncActivity : AppCompatActivity() {
     }
 
     private fun calculateAutoReconnectDelay(): Int? {
+        // User ended the session from the audio notification
+        if (viewModel.sessionEndedByUser.value == true)
+            return null
+
         // If disconnected when coming back from background, try to reconnect immediately
         if (wasConnectedWhenActivityStopped && (SystemClock.uptimeMillis() - onStartTime) in 0..2000) {
             Log.i(TAG, "Disconnected during activity restart, reconnecting ...")
@@ -339,11 +362,34 @@ class VncActivity : AppCompatActivity() {
     }
 
     private fun onSessionDisconnected() {
+        if (viewModel.sessionEndedByUser.value == true) {
+            finish()
+            return
+        }
         binding.frameView.isVisible = false
         binding.frameView.keepScreenOn = false
         inputHandler.onSessionDisconnected()
         SamsungDex.setMetaKeyCapture(this, false)
         autoReconnect()
+    }
+
+    private fun onAudioActiveChanged(active: Boolean) {
+        volumeControlStream = if (active) AudioManager.STREAM_MUSIC else AudioManager.USE_DEFAULT_STREAM_TYPE
+        if (active)
+            requestNotificationPermission()
+    }
+
+    /**
+     * Needed on API 33+ to show the audio notification. Asked only once, the first time
+     * an audio session connects. Denial does not stop audio (only hides the notification).
+     */
+    private fun requestNotificationPermission() {
+        val runInfo = viewModel.pref.runInfo
+        if (Build.VERSION.SDK_INT < 33 || runInfo.hasRequestedNotificationPermission)
+            return
+        runInfo.hasRequestedNotificationPermission = true
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            notificationPermissionRequest.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     private fun restoreFrameState() {
@@ -509,15 +555,29 @@ class VncActivity : AppCompatActivity() {
      * Input
      ************************************************************************************/
 
+    /**
+     * While desktop audio is playing, volume keys control local media volume
+     * instead of being sent to the remote.
+     */
+    private fun isLocalVolumeKey(keyCode: Int): Boolean {
+        return viewModel.audioActive.value == true &&
+               (keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
+                keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
+                keyCode == KeyEvent.KEYCODE_VOLUME_MUTE)
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (isLocalVolumeKey(keyCode)) return super.onKeyDown(keyCode, event)
         return inputHandler.onKeyEvent(event) || super.onKeyDown(keyCode, event)
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (isLocalVolumeKey(keyCode)) return super.onKeyUp(keyCode, event)
         return inputHandler.onKeyEvent(event) || super.onKeyUp(keyCode, event)
     }
 
     override fun onKeyMultiple(keyCode: Int, repeatCount: Int, event: KeyEvent): Boolean {
+        if (isLocalVolumeKey(keyCode)) return super.onKeyMultiple(keyCode, repeatCount, event)
         return inputHandler.onKeyEvent(event) || super.onKeyMultiple(keyCode, repeatCount, event)
     }
 
