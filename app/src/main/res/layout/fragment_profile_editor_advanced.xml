@@ -344,6 +344,16 @@
                         app:values="@{ @stringArray/profile_editor_remote_scale_values }"
                         tools:entries="@array/dummy_array" />
 
+                    <!--Audio-->
+                    <CheckBox
+                        android:id="@+id/audio"
+                        style="@style/FormField.CheckBox"
+                        android:checked="@={viewModel.profile.audio}"
+                        android:text="@string/title_audio"
+                        app:layout_constraintEnd_toEndOf="parent"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toBottomOf="@id/remote_scale" />
+
 
                     <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
                     <!-- Security                                                   -->
@@ -365,7 +375,7 @@
                         android:minHeight="@dimen/action_btn_size"
                         app:layout_constraintEnd_toEndOf="parent"
                         app:layout_constraintStart_toStartOf="@id/remote_scale"
-                        app:layout_constraintTop_toBottomOf="@id/remote_scale"
+                        app:layout_constraintTop_toBottomOf="@id/audio"
                         app:value="@={viewModel.profile.securityType}"
                         app:valueLabels="@{ @stringArray/profile_editor_security_labels }"
                         app:values="@{ @stringArray/profile_editor_security_values }"

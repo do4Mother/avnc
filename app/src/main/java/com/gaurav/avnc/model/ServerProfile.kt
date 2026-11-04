@@ -186,6 +186,12 @@ data class ServerProfile(
         var remoteScale: Int = 0,
 
         /**
+         * Play desktop audio (if the server offers it) on this device.
+         */
+        @ColumnInfo(defaultValue = "1")
+        var audio: Boolean = true,
+
+        /**
          * These values are used for SSH Tunnel
          */
         var sshHost: String = "",
