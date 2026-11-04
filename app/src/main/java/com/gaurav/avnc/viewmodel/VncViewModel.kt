@@ -295,17 +295,26 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
      * Audio
      **************************************************************************/
 
+    /** Called once the server has acknowledged the audio extension. */
     private fun startAudio() {
-        if (!profile.audio || audioPlayer != null || sessionEndedByUser.value == true)
+        if (!profile.audio || audioPlayer != null || sessionEndedByUser.value == true ||
+            state.value != State.Connected)
             return
 
         val player = AudioPlayer()
-        player.start()
+        if (!player.start())
+            return // no service or notification claiming audio plays
         audioPlayer = player
 
         AudioService.onDisconnect = notificationDisconnectHandler
         AudioService.start(app, profile.name.ifBlank { profile.host })
         audioActive.value = true
+    }
+
+    /** Re-posts the audio notification, e.g. once notification permission is granted. */
+    fun repostAudioNotification() {
+        if (audioActive.value == true && AudioService.onDisconnect === notificationDisconnectHandler)
+            AudioService.start(app, profile.name.ifBlank { profile.host })
     }
 
     private fun stopAudio() {
@@ -522,7 +531,6 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
                 this@VncViewModel.messenger = messenger
                 state.value = State.Connected
 
-                startAudio()
                 rememberLoginInfo()
 
                 // Initial clipboard sync, slightly delayed to allow extended clipboard negotiations
@@ -599,6 +607,10 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
         override fun onAudioData(data: ByteArray) {
             // Called on the VNC receiver thread; write() never blocks.
             audioPlayer?.write(data)
+        }
+
+        override fun onAudioAvailable() {
+            launchMain { startAudio() }
         }
 
         override fun onBell() {

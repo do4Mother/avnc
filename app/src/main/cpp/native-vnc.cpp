@@ -23,6 +23,7 @@ struct JniContext {
     jclass managedCls;              //Managed `VncClient` class
     jmethodID cbFramebufferUpdated; //Cached reference to managed callback
     jmethodID cbAudioData;          //Cached reference to managed callback
+    jmethodID cbAudioAcked;         //Cached reference to managed callback
 
     [[nodiscard]]
     JNIEnv *getEnvUnchecked() const {
@@ -77,6 +78,7 @@ Java_com_gaurav_avnc_vnc_VncClient_initLibrary(JNIEnv *env, jclass clazz) {
     context.managedCls = (jclass) env->NewGlobalRef(clazz);
     context.cbFramebufferUpdated = env->GetMethodID(context.managedCls, "cbFinishedFrameBufferUpdate", "()V");
     context.cbAudioData = env->GetMethodID(context.managedCls, "cbAudioData", "([B)V");
+    context.cbAudioAcked = env->GetMethodID(context.managedCls, "cbAudioAcked", "()V");
     //TODO: Cache more method IDs so we don't have to repeatedly search them
 
     rfbClientLog = &log_info;
@@ -328,6 +330,15 @@ static rfbBool qemuAudioHandleEncoding(rfbClient *client, rfbFramebufferUpdateRe
             !WriteToRFBServer(client, (const char *) enable, sizeof(enable)))
             return FALSE;
         ex->audioAcked = true;
+
+        // Only now does the app set up playback (service, notification, Wi-Fi lock).
+        auto env = context.getEnv();
+        env->CallVoidMethod(getManagedClient(client), context.cbAudioAcked);
+        if (env->ExceptionCheck()) {
+            // More JNI calls follow in this update; do not leave an exception pending.
+            env->ExceptionDescribe();
+            env->ExceptionClear();
+        }
     }
     return TRUE;
 }

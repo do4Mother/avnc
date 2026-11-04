@@ -57,6 +57,9 @@ class VncClient(private val observer: Observer) {
 
         /** One chunk of S16LE stereo 48 kHz PCM from the server. Called on the VNC thread. */
         fun onAudioData(data: ByteArray) {}
+
+        /** The server supports audio and the client has enabled it. Called on the VNC thread. */
+        fun onAudioAvailable() {}
     }
 
     /**
@@ -412,6 +415,9 @@ class VncClient(private val observer: Observer) {
 
     @Keep
     private fun cbAudioData(data: ByteArray) = observer.onAudioData(data)
+
+    @Keep
+    private fun cbAudioAcked() = observer.onAudioAvailable()
 
     @Keep
     private fun cbHandleCursorPos(x: Int, y: Int) {

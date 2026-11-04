@@ -41,9 +41,10 @@ class AudioPlayer {
     private var bufferFrames = 0
     private var warnedWrite = false
 
+    /** Returns false if playback could not start. */
     @Synchronized
-    fun start() {
-        if (running) return
+    fun start(): Boolean {
+        if (running) return true
         var t: AudioTrack? = null
         try {
             t = createTrack()
@@ -53,12 +54,13 @@ class AudioPlayer {
         } catch (e: Exception) {
             Log.e(TAG, "Cannot start AudioTrack", e)
             try { t?.release() } catch (_: Exception) {}
-            return
+            return false
         }
         track = t
         capacityFrames = bufferFrames
         running = true
         thread = Thread({ playLoop(t) }, "AudioPlayer").also { it.start() }
+        return true
     }
 
     /** Non-blocking. Drops the chunk if the player is behind. */

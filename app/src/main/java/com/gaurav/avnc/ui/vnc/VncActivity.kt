@@ -88,7 +88,10 @@ class VncActivity : AppCompatActivity() {
     private var wasKeyboardVisibleWhenActivityStopped = false
     private var onStartTime = 0L
     private val notificationPermissionRequest =
-            registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* Denial does not stop audio */ }
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                // The notification was posted before the grant, so post it again. Denial does not stop audio.
+                if (granted) viewModel.repostAudioNotification()
+            }
 
     // Observed forever, so that a Disconnect from the notification finishes the activity
     // even while it is stopped in the background.

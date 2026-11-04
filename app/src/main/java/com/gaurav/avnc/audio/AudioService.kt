@@ -40,6 +40,7 @@ class AudioService : Service() {
         private const val CHANNEL_ID = "audio_playback"
         private const val NOTIFICATION_ID = 1001
         private const val ACTION_START = "com.gaurav.avnc.audio.action.START"
+        private const val ACTION_STOP = "com.gaurav.avnc.audio.action.STOP"
         const val ACTION_DISCONNECT = "com.gaurav.avnc.audio.action.DISCONNECT"
         private const val EXTRA_SERVER_NAME = "server_name"
 
@@ -50,12 +51,17 @@ class AudioService : Service() {
         @Volatile
         var onDisconnect: (() -> Unit)? = null
 
+        /** Whether [start] has asked for the service and no [stop] has followed. Main thread only. */
+        private var requested = false
+
+        /** Idempotent: calling it again re-posts the notification. */
         fun start(context: Context, serverName: String) {
             val intent = Intent(context, AudioService::class.java)
                     .setAction(ACTION_START)
                     .putExtra(EXTRA_SERVER_NAME, serverName)
             try {
                 ContextCompat.startForegroundService(context, intent)
+                requested = true
             } catch (e: Exception) {
                 // E.g. ForegroundServiceStartNotAllowedException if we connected while in background.
                 // Audio still plays, just without background protection.
@@ -63,21 +69,47 @@ class AudioService : Service() {
             }
         }
 
+        /**
+         * Never uses stopService(): if the service has not yet called startForeground(), the
+         * system would kill the app. Instead the stop goes through [onStartCommand], which
+         * enters the foreground first and then stops itself. A no-op if nothing was started.
+         */
         fun stop(context: Context) {
-            context.stopService(Intent(context, AudioService::class.java))
+            if (!requested) return
+            requested = false
+            val intent = Intent(context, AudioService::class.java).setAction(ACTION_STOP)
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (e: Exception) {
+                // Not allowed to start a foreground service now. If ours is running it is
+                // already in the foreground, so a plain start (or stop) is safe.
+                try {
+                    context.startService(intent)
+                } catch (e2: Exception) {
+                    Log.w(TAG, "Cannot send stop to audio service", e2)
+                    context.stopService(Intent(context, AudioService::class.java))
+                }
+            }
         }
     }
 
     private var wifiLock: WifiManager.WifiLock? = null
+    private var serverName = ""
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            // Sent by the notification (plain startService), so no startForeground is owed.
             ACTION_DISCONNECT -> handleDisconnect()
+            ACTION_STOP -> {
+                // Sent with startForegroundService: startForeground must come before stopping.
+                goForeground(serverName)
+                stopSelf(startId) // a later START keeps us running
+            }
             else -> {
-                val name = intent?.getStringExtra(EXTRA_SERVER_NAME) ?: ""
-                goForeground(name)
+                serverName = intent?.getStringExtra(EXTRA_SERVER_NAME) ?: ""
+                goForeground(serverName)
                 acquireWifiLock()
             }
         }
@@ -105,8 +137,8 @@ class AudioService : Service() {
         try {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(serverName), type)
         } catch (e: Exception) {
+            // Not stopSelf(): stopping a service that owes startForeground() kills the app.
             Log.e(TAG, "Cannot enter foreground", e)
-            stopSelf()
         }
     }
 
