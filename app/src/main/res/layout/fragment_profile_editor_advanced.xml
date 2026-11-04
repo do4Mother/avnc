@@ -320,6 +320,30 @@
                         app:values="@{ @stringArray/orientation_values }"
                         tools:entries="@array/dummy_array" />
 
+                    <!--Remote scale-->
+                    <TextView
+                        android:id="@+id/remote_scale_label"
+                        style="@style/FormField.LabelWithIcon"
+                        android:labelFor="@id/remote_scale"
+                        android:text="@string/title_remote_scale"
+                        app:drawableStartCompat="@drawable/ic_zoom_in"
+                        app:layout_constraintBottom_toBottomOf="@id/remote_scale"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toTopOf="@id/remote_scale" />
+
+                    <com.gaurav.avnc.util.SpinnerEx
+                        android:id="@+id/remote_scale"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:minHeight="@dimen/action_btn_size"
+                        app:layout_constraintEnd_toEndOf="parent"
+                        app:layout_constraintStart_toStartOf="@id/screen_orientation"
+                        app:layout_constraintTop_toBottomOf="@id/screen_orientation"
+                        app:value="@={viewModel.profile.remoteScale}"
+                        app:valueLabels="@{ @stringArray/profile_editor_remote_scale_labels }"
+                        app:values="@{ @stringArray/profile_editor_remote_scale_values }"
+                        tools:entries="@array/dummy_array" />
+
 
                     <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
                     <!-- Security                                                   -->
@@ -340,8 +364,8 @@
                         android:layout_height="wrap_content"
                         android:minHeight="@dimen/action_btn_size"
                         app:layout_constraintEnd_toEndOf="parent"
-                        app:layout_constraintStart_toStartOf="@id/screen_orientation"
-                        app:layout_constraintTop_toBottomOf="@id/screen_orientation"
+                        app:layout_constraintStart_toStartOf="@id/remote_scale"
+                        app:layout_constraintTop_toBottomOf="@id/remote_scale"
                         app:value="@={viewModel.profile.securityType}"
                         app:valueLabels="@{ @stringArray/profile_editor_security_labels }"
                         app:values="@{ @stringArray/profile_editor_security_values }"

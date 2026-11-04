@@ -179,6 +179,13 @@ data class ServerProfile(
         var wolPort: Int = 9,
 
         /**
+         * Scale (in percent) announced to the server for the remote desktop.
+         * 0 means the device's display density.
+         */
+        @ColumnInfo(defaultValue = "0")
+        var remoteScale: Int = 0,
+
+        /**
          * These values are used for SSH Tunnel
          */
         var sshHost: String = "",

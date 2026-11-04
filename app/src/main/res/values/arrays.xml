@@ -221,6 +221,32 @@
     </string-array>
 
 
+    <!--Values for remote scale (percent, 0 = display density)-->
+    <string-array name="profile_editor_remote_scale_labels" translatable="false">
+        <item>@string/title_automatic</item>
+        <item>100%</item>
+        <item>125%</item>
+        <item>150%</item>
+        <item>175%</item>
+        <item>200%</item>
+        <item>225%</item>
+        <item>250%</item>
+        <item>275%</item>
+        <item>300%</item>
+    </string-array>
+    <string-array name="profile_editor_remote_scale_values" translatable="false">
+        <item>0</item>
+        <item>100</item>
+        <item>125</item>
+        <item>150</item>
+        <item>175</item>
+        <item>200</item>
+        <item>225</item>
+        <item>250</item>
+        <item>275</item>
+        <item>300</item>
+    </string-array>
+
     <!--Dummy string array used for testing-->
     <string-array name="dummy_array">
         <item>Item 1</item>

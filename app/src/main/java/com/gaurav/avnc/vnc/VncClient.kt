@@ -1,5 +1,6 @@
 package com.gaurav.avnc.vnc
 
+import android.content.res.Resources
 import androidx.annotation.Keep
 import java.io.ByteArrayInputStream
 import java.io.IOException
@@ -12,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
+import kotlin.math.roundToInt
 
 /**
  * This is a thin wrapper around native client.
@@ -124,11 +126,14 @@ class VncClient(private val observer: Observer) {
      * Setup different properties for this client.
      *
      * @param securityType RFB security type to use.
+     * @param remoteScale Scale (percent) announced to the server; 0 uses the display density.
      */
-    fun configure(securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean) {
+    fun configure(securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, remoteScale: Int = 0) {
         stateLock.read {
             if (!connected && !destroyed) {
-                nativeConfigure(nativePtr, securityType, useLocalCursor, imageQuality, useRawEncoding)
+                val deviceScale = if (remoteScale > 0) remoteScale
+                else (Resources.getSystem().displayMetrics.density * 100).roundToInt()
+                nativeConfigure(nativePtr, securityType, useLocalCursor, imageQuality, useRawEncoding, deviceScale)
             }
         }
     }
@@ -345,7 +350,7 @@ class VncClient(private val observer: Observer) {
     }
 
     private external fun nativeClientCreate(): Long
-    private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean)
+    private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, deviceScale: Int)
     private external fun nativeInit(clientPtr: Long, host: String, port: Int): Boolean
     private external fun nativeSetDest(clientPtr: Long, host: String, port: Int)
     private external fun nativeProcessServerMessage(clientPtr: Long): Boolean

@@ -57,6 +57,15 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
 
+        // Release build for sideloading on a personal arm64 phone; installs next to stock AVNC.
+        create("personal") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".ds"
+            versionNameSuffix = " (device scale)"
+            signingConfig = signingConfigs.getByName("debug")
+            ndk { abiFilters += "arm64-v8a" }
+        }
+
         create("ci") {
             initWith(getByName("release"))
             applicationIdSuffix = ".ci"

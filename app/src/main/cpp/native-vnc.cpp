@@ -279,6 +279,25 @@ static void onGotCursorShape(rfbClient *client, int xHot, int yHot, int width, i
 /**
  * Hooks callbacks to rfbClient.
  */
+/**
+ * Private pseudo-encoding announcing the device scale: 0x53430000 | (density * 100).
+ * Servers that do not know it ignore it. Zero-terminated, as LibVNCClient expects.
+ */
+static const int DEVICE_SCALE_ENCODING = 0x53430000;
+static int deviceScaleEncodings[2] = {0, 0};
+static rfbClientProtocolExtension deviceScaleExtension = {deviceScaleEncodings};
+
+static void announceDeviceScale(int percent) {
+    static bool registered = false;
+    if (percent <= 0 || percent > 0xFFFF)
+        return;
+    deviceScaleEncodings[0] = DEVICE_SCALE_ENCODING | percent;
+    if (!registered) {
+        rfbClientRegisterExtension(&deviceScaleExtension);
+        registered = true;
+    }
+}
+
 static void setCallbacks(rfbClient *client) {
     client->GetPassword = onGetPassword;
     client->GetCredential = onGetCredential;
@@ -322,7 +341,7 @@ extern "C"
 JNIEXPORT void JNICALL
 Java_com_gaurav_avnc_vnc_VncClient_nativeConfigure(JNIEnv * /*env*/, jobject /*thiz*/, jlong client_ptr,
                                                    jint securityType, jboolean use_local_cursor, jint image_quality,
-                                                   jboolean use_raw_encoding) {
+                                                   jboolean use_raw_encoding, jint device_scale) {
     auto client = (rfbClient *) client_ptr;
 
     // 0 means all auth types
@@ -335,6 +354,8 @@ Java_com_gaurav_avnc_vnc_VncClient_nativeConfigure(JNIEnv * /*env*/, jobject /*t
         client->appData.useRemoteCursor = TRUE;
         getClientExtension(client)->cursor = newCursor();
     }
+
+    announceDeviceScale(device_scale);
 
     client->appData.qualityLevel = image_quality;
     if (use_raw_encoding)
