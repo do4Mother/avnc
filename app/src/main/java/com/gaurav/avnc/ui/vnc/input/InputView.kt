@@ -53,8 +53,21 @@ class InputView(context: Context?, attrs: AttributeSet? = null) : View(context, 
         this.inputHandler = inputHandler
 
         // Hide local cursor if requested and supported
-        if (Build.VERSION.SDK_INT >= 24 && viewModel.pref.input.hideLocalCursor)
+        if (Build.VERSION.SDK_INT >= 24 && viewModel.pref.input.hideLocalCursor) {
+            hideLocalPointer = true
             pointerIcon = PointerIcon.getSystemIcon(context, PointerIcon.TYPE_NULL)
+        }
+    }
+
+    private var hideLocalPointer = false
+
+    /**
+     * Some devices only honour the icon returned here, not the one set on the view.
+     */
+    override fun onResolvePointerIcon(event: MotionEvent, pointerIndex: Int): PointerIcon? {
+        if (hideLocalPointer && Build.VERSION.SDK_INT >= 24)
+            return PointerIcon.getSystemIcon(context, PointerIcon.TYPE_NULL)
+        return super.onResolvePointerIcon(event, pointerIndex)
     }
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {

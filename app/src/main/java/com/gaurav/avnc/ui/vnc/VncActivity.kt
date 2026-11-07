@@ -23,6 +23,7 @@ import android.util.Log
 import android.util.Rational
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.PointerIcon
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -113,6 +114,13 @@ class VncActivity : AppCompatActivity() {
         binding.lifecycleOwner = this
         binding.frameView.initialize(viewModel)
         binding.inputView.initialize(viewModel, inputHandler)
+        if (Build.VERSION.SDK_INT >= 24 && viewModel.pref.input.hideLocalCursor) {
+            // Belt and braces for devices that resolve the pointer icon on another view.
+            val none = PointerIcon.getSystemIcon(this, PointerIcon.TYPE_NULL)
+            binding.frameView.pointerIcon = none
+            binding.root.pointerIcon = none
+            window.decorView.pointerIcon = none
+        }
         viewModel.frameViewRef = WeakReference(binding.frameView)
 
         setupLayout()
