@@ -122,6 +122,14 @@ class VncClient(private val observer: Observer) {
     var cursorInfo = CursorInfo()
 
     /**
+     * The server has sent a (non-empty) cursor picture. Without one the renderer draws its
+     * own arrow at the pointer, e.g. while the server streams video and has no cursor data.
+     */
+    @Volatile
+    var cursorShapeReceived = false
+        private set
+
+    /**
      * Client-side cursor rendering creates a synchronization issue.
      * Suppose if pointer is moved to (50,10) by client. A PointerEvent is sent
      * to the server and cursor is immediately rendered on (50,10).
@@ -149,16 +157,16 @@ class VncClient(private val observer: Observer) {
      * @param securityType RFB security type to use.
      * @param remoteScale Scale (percent) announced to the server; 0 uses the display density.
      * @param audio Ask the server for desktop audio (QEMU audio extension).
-     * @param video Offer the Open H.264 encoding, so a server that can encode video sends it.
-     * @param hideCursor Tell the server this client shows no cursor, so video comes without one.
+     * @param video Offer the Open H.264 encoding, so a server that can encode video sends it
+     *              (without the cursor in the picture: this client draws the pointer itself).
      */
     fun configure(securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, remoteScale: Int = 0,
-                  audio: Boolean = false, video: Boolean = false, hideCursor: Boolean = false) {
+                  audio: Boolean = false, video: Boolean = false) {
         stateLock.read {
             if (!connected && !destroyed) {
                 val deviceScale = if (remoteScale > 0) remoteScale
                 else (Resources.getSystem().displayMetrics.density * 100).roundToInt()
-                nativeConfigure(nativePtr, securityType, useLocalCursor, imageQuality, useRawEncoding, deviceScale, audio, video, hideCursor)
+                nativeConfigure(nativePtr, securityType, useLocalCursor, imageQuality, useRawEncoding, deviceScale, audio, video)
             }
         }
     }
@@ -375,7 +383,7 @@ class VncClient(private val observer: Observer) {
     }
 
     private external fun nativeClientCreate(): Long
-    private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, deviceScale: Int, audio: Boolean, video: Boolean, hideCursor: Boolean)
+    private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, deviceScale: Int, audio: Boolean, video: Boolean)
     private external fun nativeInit(clientPtr: Long, host: String, port: Int): Boolean
     private external fun nativeSetDest(clientPtr: Long, host: String, port: Int)
     private external fun nativeProcessServerMessage(clientPtr: Long): Boolean
@@ -454,6 +462,7 @@ class VncClient(private val observer: Observer) {
     @Keep
     private fun cbHandleCursorInfo(width: Int, height: Int, xHot: Int, yHot: Int) {
         cursorInfo = CursorInfo(width, height, xHot, yHot)
+        cursorShapeReceived = width > 0 && height > 0
         cbFinishedFrameBufferUpdate() // Fake call to trigger rendering
     }
 

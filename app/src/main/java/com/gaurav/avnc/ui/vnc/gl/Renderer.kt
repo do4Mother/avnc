@@ -8,8 +8,17 @@
 
 package com.gaurav.avnc.ui.vnc.gl
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
 import android.opengl.GLES20.GL_BLEND
 import android.opengl.GLES20.GL_COLOR_BUFFER_BIT
+import android.opengl.GLES20.GL_RGBA
+import android.opengl.GLES20.GL_TEXTURE_2D
+import android.opengl.GLES20.GL_UNSIGNED_BYTE
+import android.opengl.GLES20.glTexImage2D
 import android.opengl.GLES20.GL_ONE_MINUS_SRC_ALPHA
 import android.opengl.GLES20.GL_SRC_ALPHA
 import android.opengl.GLES20.glBlendFunc
@@ -22,6 +31,9 @@ import android.opengl.GLSurfaceView
 import android.opengl.Matrix
 import android.view.Surface
 import com.gaurav.avnc.viewmodel.VncViewModel
+import com.gaurav.avnc.vnc.CursorInfo
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
@@ -29,6 +41,39 @@ import javax.microedition.khronos.opengles.GL10
  * Frame renderer.
  */
 class Renderer(val viewModel: VncViewModel) : GLSurfaceView.Renderer {
+
+    companion object {
+        private const val ARROW_W = 24
+        private const val ARROW_H = 32
+
+        /**
+         * A white arrow with a black outline, as premultiplied RGBA bytes (the shader swaps
+         * red and blue, which does not matter for black and white).
+         */
+        private fun renderArrow(): ByteBuffer {
+            val bitmap = Bitmap.createBitmap(ARROW_W, ARROW_H, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val path = Path().apply {
+                moveTo(1f, 1f)
+                lineTo(1f, 23f)
+                lineTo(7f, 18f)
+                lineTo(11f, 28f)
+                lineTo(15f, 26f)
+                lineTo(11f, 17f)
+                lineTo(19f, 17f)
+                close()
+            }
+            val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.FILL }
+            val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; style = Paint.Style.STROKE; strokeWidth = 2f }
+            canvas.drawPath(path, fill)
+            canvas.drawPath(path, outline)
+            val buffer = ByteBuffer.allocateDirect(ARROW_W * ARROW_H * 4).order(ByteOrder.nativeOrder())
+            bitmap.copyPixelsToBuffer(buffer)
+            bitmap.recycle()
+            buffer.rewind()
+            return buffer
+        }
+    }
 
     private val projectionMatrix = FloatArray(16)
     private val drawCursor = !viewModel.pref.input.hideRemoteCursor
@@ -44,6 +89,13 @@ class Renderer(val viewModel: VncViewModel) : GLSurfaceView.Renderer {
     private lateinit var video: VideoFrame
     private var videoSurface: Surface? = null
     private val texMatrix = FloatArray(16)
+
+    /**
+     * The pointer drawn when the server sends no cursor picture (it streams video, which
+     * carries no cursor): a plain arrow.
+     */
+    private val arrowInfo = CursorInfo(ARROW_W, ARROW_H, 1, 1)
+    private val arrowPixels: ByteBuffer by lazy { renderArrow() }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         glClearColor(0f, 0f, 0f, 1f)
@@ -138,11 +190,18 @@ class Renderer(val viewModel: VncViewModel) : GLSurfaceView.Renderer {
         if (drawCursor) {
             glEnable(GL_BLEND)
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-            val ci = client.cursorInfo
+            val fromServer = client.cursorShapeReceived
+            val ci = if (fromServer) client.cursorInfo else arrowInfo
 
+            frame.updateFbSize(state.fbWidth, state.fbHeight) // the clip rectangle, in video mode too
             cursor.update(client.pointerX.toFloat(), client.pointerY.toFloat(), ci, frame)
             cursor.bind(program)
-            client.uploadCursorTexture()
+            if (fromServer) {
+                client.uploadCursorTexture()
+            } else {
+                arrowPixels.rewind()
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ARROW_W, ARROW_H, 0, GL_RGBA, GL_UNSIGNED_BYTE, arrowPixels)
+            }
             cursor.draw()
 
             glDisable(GL_BLEND)

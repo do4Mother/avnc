@@ -120,7 +120,7 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
 
     var client: VncClient? = null
 
-    private val session = RemoteSession(RemoteSessionObserver()) { pref.input.hideRemoteCursor }
+    private val session = RemoteSession(RemoteSessionObserver())
 
     /**
      * We have two places for connection state (both are synced):
