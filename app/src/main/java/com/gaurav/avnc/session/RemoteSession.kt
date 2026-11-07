@@ -145,7 +145,8 @@ class RemoteSession(private val observer: Observer) {
 
     private fun configureClient(vncClient: VncClient, profile: ServerProfile) {
         vncClient.configure(profile.securityType, true  /* Hardcoded to true */,
-                            profile.imageQuality, profile.useRawEncoding, profile.remoteScale, profile.audio)
+                            profile.imageQuality, profile.useRawEncoding, profile.remoteScale, profile.audio,
+                            profile.video)
 
         if (profile.useRepeater)
             vncClient.setupRepeater(profile.idOnRepeater)

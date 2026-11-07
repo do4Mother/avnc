@@ -60,6 +60,12 @@ class VncClient(private val observer: Observer) {
 
         /** The server supports audio and the client has enabled it. Called on the VNC thread. */
         fun onAudioAvailable() {}
+
+        /**
+         * One H.264 access unit for the whole framebuffer (Open H.264 encoding).
+         * [flags] bit 0 asks for a fresh decoder. Called on the VNC thread.
+         */
+        fun onVideoFrame(data: ByteArray, flags: Int, width: Int, height: Int) {}
     }
 
     /**
@@ -93,6 +99,15 @@ class VncClient(private val observer: Observer) {
      * If true, client stops sending framebuffer update requests to server
      */
     val frameBufferUpdatesPaused = AtomicBoolean(false)
+
+    /**
+     * The server sends the picture as H.264 video, so the framebuffer texture is stale and
+     * the renderer shows the decoded video instead. Cleared when the framebuffer size changes
+     * (the stream restarts) until the next video frame arrives.
+     */
+    @Volatile
+    var videoMode = false
+        private set
 
 
     /**
@@ -134,14 +149,15 @@ class VncClient(private val observer: Observer) {
      * @param securityType RFB security type to use.
      * @param remoteScale Scale (percent) announced to the server; 0 uses the display density.
      * @param audio Ask the server for desktop audio (QEMU audio extension).
+     * @param video Offer the Open H.264 encoding, so a server that can encode video sends it.
      */
     fun configure(securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, remoteScale: Int = 0,
-                  audio: Boolean = false) {
+                  audio: Boolean = false, video: Boolean = false) {
         stateLock.read {
             if (!connected && !destroyed) {
                 val deviceScale = if (remoteScale > 0) remoteScale
                 else (Resources.getSystem().displayMetrics.density * 100).roundToInt()
-                nativeConfigure(nativePtr, securityType, useLocalCursor, imageQuality, useRawEncoding, deviceScale, audio)
+                nativeConfigure(nativePtr, securityType, useLocalCursor, imageQuality, useRawEncoding, deviceScale, audio, video)
             }
         }
     }
@@ -358,7 +374,7 @@ class VncClient(private val observer: Observer) {
     }
 
     private external fun nativeClientCreate(): Long
-    private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, deviceScale: Int, audio: Boolean)
+    private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, deviceScale: Int, audio: Boolean, video: Boolean)
     private external fun nativeInit(clientPtr: Long, host: String, port: Int): Boolean
     private external fun nativeSetDest(clientPtr: Long, host: String, port: Int)
     private external fun nativeProcessServerMessage(clientPtr: Long): Boolean
@@ -407,7 +423,16 @@ class VncClient(private val observer: Observer) {
     private fun cbFinishedFrameBufferUpdate() = observer.onFramebufferUpdated()
 
     @Keep
-    private fun cbFramebufferSizeChanged(w: Int, h: Int) = observer.onFramebufferSizeChanged(w, h)
+    private fun cbFramebufferSizeChanged(w: Int, h: Int) {
+        videoMode = false
+        observer.onFramebufferSizeChanged(w, h)
+    }
+
+    @Keep
+    private fun cbVideoFrame(data: ByteArray, flags: Int, width: Int, height: Int) {
+        videoMode = true
+        observer.onVideoFrame(data, flags, width, height)
+    }
 
 
     @Keep

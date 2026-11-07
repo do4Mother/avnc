@@ -129,6 +129,13 @@ open class Image {
     fun bind(program: Program) {
         setVertexAttributePointer(program.aPositionLocation, TRIANGLE_COMPONENTS, drawVertexBuffer)
         setVertexAttributePointer(program.aTextureCoordinatesLocation, TEXTURE_COMPONENTS, textureVertexBuffer)
+        bindTexture()
+    }
+
+    /**
+     * Binds the texture sampled when drawing this image.
+     */
+    protected open fun bindTexture() {
         glBindTexture(GL_TEXTURE_2D, texture)
         // Texture data is uploaded from native code
     }

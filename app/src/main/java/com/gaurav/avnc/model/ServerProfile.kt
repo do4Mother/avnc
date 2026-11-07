@@ -192,6 +192,12 @@ data class ServerProfile(
         var audio: Boolean = true,
 
         /**
+         * Receive the picture as H.264 video (if the server can encode it), decoded in hardware.
+         */
+        @ColumnInfo(defaultValue = "1")
+        var video: Boolean = true,
+
+        /**
          * These values are used for SSH Tunnel
          */
         var sshHost: String = "",

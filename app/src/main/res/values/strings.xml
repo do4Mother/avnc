@@ -44,6 +44,7 @@
     <string name="title_orientation">Orientation</string>
     <string name="title_remote_scale">Remote scale</string>
     <string name="title_audio">Play desktop audio on this device</string>
+    <string name="title_video">Receive the picture as H.264 video (hardware decoded)</string>
     <string name="title_image_quality_raw">Raw</string>
     <string name="title_vnc_security">Security</string>
     <string name="title_use_ssh_tunnel">Use SSH tunnel</string>

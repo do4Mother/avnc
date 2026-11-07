@@ -13,6 +13,7 @@ import android.content.pm.ActivityInfo
 import android.graphics.RectF
 import android.media.ToneGenerator
 import android.util.Log
+import android.view.Surface
 import android.widget.Toast
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
@@ -39,6 +40,7 @@ import com.gaurav.avnc.util.setClipboardText
 import com.gaurav.avnc.util.trustCertificate
 import com.gaurav.avnc.viewmodel.service.SshClient
 import com.gaurav.avnc.vnc.UserCredential
+import com.gaurav.avnc.vnc.VideoDecoder
 import com.gaurav.avnc.vnc.VncClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -242,10 +244,44 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
      */
     private val notificationDisconnectHandler: () -> Unit = { disconnectFromNotification() }
 
+    /**
+     * H.264 video from the server. Created on the VNC thread by the first video frame; the
+     * renderer gives it the surface to draw on. Frames decoded so far tell the renderer that
+     * the video texture holds a picture.
+     */
+    @Volatile
+    private var videoDecoder: VideoDecoder? = null
+
+    @Volatile
+    private var videoSurface: Surface? = null
+
+    @Volatile
+    var videoFramesDecoded = 0L
+        private set
+
     override fun onCleared() {
         super.onCleared()
         stopAudio()
+        stopVideo()
         session.stop()
+    }
+
+    /** From the renderer thread: where decoded video frames should go (null: gone). */
+    fun onVideoSurface(surface: Surface?) {
+        videoSurface = surface
+        videoDecoder?.setSurface(surface)
+    }
+
+    /** From the SurfaceTexture: a decoded frame is ready to draw. */
+    fun onVideoFrameAvailable() {
+        videoFramesDecoded++
+        refreshFrameView()
+    }
+
+    private fun stopVideo() {
+        videoDecoder?.release()
+        videoDecoder = null
+        videoFramesDecoded = 0
     }
 
 
@@ -543,6 +579,7 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
             // Block until main thread is synchronised with disconnected state
             runBlocking(Dispatchers.Main) {
                 stopAudio()
+                stopVideo()
                 state.value = State.Disconnected
                 client = null
                 messenger = null
@@ -611,6 +648,15 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
 
         override fun onAudioAvailable() {
             launchMain { startAudio() }
+        }
+
+        override fun onVideoFrame(data: ByteArray, flags: Int, width: Int, height: Int) {
+            // Called on the VNC receiver thread; the decoder queues the frame on its own thread.
+            val decoder = videoDecoder ?: VideoDecoder { messenger?.refreshFrameBuffer() }.also {
+                it.setSurface(videoSurface)
+                videoDecoder = it
+            }
+            decoder.submit(data, flags, width, height)
         }
 
         override fun onBell() {

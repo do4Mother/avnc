@@ -354,6 +354,16 @@
                         app:layout_constraintStart_toStartOf="parent"
                         app:layout_constraintTop_toBottomOf="@id/remote_scale" />
 
+                    <!--Video-->
+                    <CheckBox
+                        android:id="@+id/video"
+                        style="@style/FormField.CheckBox"
+                        android:checked="@={viewModel.profile.video}"
+                        android:text="@string/title_video"
+                        app:layout_constraintEnd_toEndOf="parent"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toBottomOf="@id/audio" />
+
 
                     <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
                     <!-- Security                                                   -->
@@ -375,7 +385,7 @@
                         android:minHeight="@dimen/action_btn_size"
                         app:layout_constraintEnd_toEndOf="parent"
                         app:layout_constraintStart_toStartOf="@id/remote_scale"
-                        app:layout_constraintTop_toBottomOf="@id/audio"
+                        app:layout_constraintTop_toBottomOf="@id/video"
                         app:value="@={viewModel.profile.securityType}"
                         app:valueLabels="@{ @stringArray/profile_editor_security_labels }"
                         app:values="@{ @stringArray/profile_editor_security_values }"

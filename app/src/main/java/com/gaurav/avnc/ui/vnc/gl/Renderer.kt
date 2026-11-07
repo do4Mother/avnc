@@ -20,6 +20,7 @@ import android.opengl.GLES20.glEnable
 import android.opengl.GLES20.glViewport
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
+import android.view.Surface
 import com.gaurav.avnc.viewmodel.VncViewModel
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
@@ -35,12 +36,26 @@ class Renderer(val viewModel: VncViewModel) : GLSurfaceView.Renderer {
     private lateinit var frame: Frame
     private lateinit var cursor: Cursor
 
+    /**
+     * Decoded H.264 video arrives on [videoSurface] (through [VideoFrame]'s SurfaceTexture)
+     * and is drawn with [videoProgram] instead of the framebuffer texture.
+     */
+    private lateinit var videoProgram: Program
+    private lateinit var video: VideoFrame
+    private var videoSurface: Surface? = null
+    private val texMatrix = FloatArray(16)
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         glClearColor(0f, 0f, 0f, 1f)
 
         frame = Frame()
         cursor = Cursor()
         program = Program()
+
+        videoProgram = Program(Shaders.VIDEO_VERTEX_SHADER, Shaders.VIDEO_FRAGMENT_SHADER)
+        video = VideoFrame { viewModel.onVideoFrameAvailable() }
+        videoSurface?.release()
+        videoSurface = Surface(video.surfaceTexture).also { viewModel.onVideoSurface(it) }
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -99,12 +114,26 @@ class Renderer(val viewModel: VncViewModel) : GLSurfaceView.Renderer {
         program.useProgram()
         program.setUniforms(projectionMatrix)
 
-        frame.updateFbSize(state.fbWidth, state.fbHeight)
-        frame.bind(program)
-        client.uploadFrameTexture()
-        frame.draw()
-
-        program.validate()
+        if (client.videoMode && viewModel.videoFramesDecoded > 0) {
+            video.surfaceTexture.updateTexImage()
+            video.surfaceTexture.getTransformMatrix(texMatrix)
+            videoProgram.useProgram()
+            videoProgram.setUniforms(projectionMatrix)
+            videoProgram.setTexMatrix(texMatrix)
+            video.updateFbSize(state.fbWidth, state.fbHeight)
+            video.bind(videoProgram)
+            video.draw()
+            videoProgram.validate()
+            // Back to the plain program for the cursor.
+            program.useProgram()
+            program.setUniforms(projectionMatrix)
+        } else {
+            frame.updateFbSize(state.fbWidth, state.fbHeight)
+            frame.bind(program)
+            client.uploadFrameTexture()
+            frame.draw()
+            program.validate()
+        }
 
         if (drawCursor) {
             glEnable(GL_BLEND)

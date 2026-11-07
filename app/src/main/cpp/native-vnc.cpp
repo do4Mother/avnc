@@ -24,6 +24,7 @@ struct JniContext {
     jmethodID cbFramebufferUpdated; //Cached reference to managed callback
     jmethodID cbAudioData;          //Cached reference to managed callback
     jmethodID cbAudioAcked;         //Cached reference to managed callback
+    jmethodID cbVideoFrame;         //Cached reference to managed callback
 
     [[nodiscard]]
     JNIEnv *getEnvUnchecked() const {
@@ -79,6 +80,7 @@ Java_com_gaurav_avnc_vnc_VncClient_initLibrary(JNIEnv *env, jclass clazz) {
     context.cbFramebufferUpdated = env->GetMethodID(context.managedCls, "cbFinishedFrameBufferUpdate", "()V");
     context.cbAudioData = env->GetMethodID(context.managedCls, "cbAudioData", "([B)V");
     context.cbAudioAcked = env->GetMethodID(context.managedCls, "cbAudioAcked", "()V");
+    context.cbVideoFrame = env->GetMethodID(context.managedCls, "cbVideoFrame", "([BIII)V");
     //TODO: Cache more method IDs so we don't have to repeatedly search them
 
     rfbClientLog = &log_info;
@@ -415,6 +417,71 @@ static void configureAudio(rfbClient *client, bool audio) {
     }
 }
 
+/**
+ * Open H.264 encoding (50): the server sends the whole screen as one H.264 stream. Each rect
+ * carries u32 length, u32 flags (bit 0: reset the decoder context) and that many bytes of
+ * Annex-B access units. The bytes go to the managed side, which decodes them with MediaCodec.
+ */
+static const int H264_ENCODING = 50;
+static const uint32_t H264_MAX_FRAME = 16 * 1024 * 1024;
+static int h264Encodings[2] = {0, 0};
+
+static rfbBool h264HandleEncoding(rfbClient *client, rfbFramebufferUpdateRectHeader *rect) {
+    if (rect->encoding != (uint32_t) H264_ENCODING)
+        return FALSE;
+
+    uint8_t header[8];
+    if (!ReadFromRFBServer(client, (char *) header, sizeof(header)))
+        return FALSE;
+    uint32_t len = ((uint32_t) header[0] << 24) | ((uint32_t) header[1] << 16) |
+                   ((uint32_t) header[2] << 8) | (uint32_t) header[3];
+    uint32_t flags = ((uint32_t) header[4] << 24) | ((uint32_t) header[5] << 16) |
+                     ((uint32_t) header[6] << 8) | (uint32_t) header[7];
+    if (len > H264_MAX_FRAME) {
+        rfbClientErr("H.264 frame too large: %u bytes\n", len);
+        return FALSE;
+    }
+
+    auto env = context.getEnv();
+    jbyteArray bytes = env->NewByteArray((jsize) len);
+    if (!bytes) {
+        rfbClientErr("h264HandleEncoding: Unable to allocate memory for video data\n");
+        return FALSE;
+    }
+    if (len > 0) {
+        auto data = (jbyte *) env->GetPrimitiveArrayCritical(bytes, nullptr);
+        if (!data) {
+            env->DeleteLocalRef(bytes);
+            return FALSE;
+        }
+        rfbBool ok = ReadFromRFBServer(client, (char *) data, len);
+        env->ReleasePrimitiveArrayCritical(bytes, data, 0);
+        if (!ok) {
+            env->DeleteLocalRef(bytes);
+            return FALSE;
+        }
+    }
+    env->CallVoidMethod(getManagedClient(client), context.cbVideoFrame, bytes, (jint) flags,
+                        (jint) rect->r.w, (jint) rect->r.h);
+    env->DeleteLocalRef(bytes);
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+    }
+    return TRUE;
+}
+
+static rfbClientProtocolExtension h264Extension = {h264Encodings, h264HandleEncoding, nullptr};
+
+static void configureVideo(bool video) {
+    static bool registered = false;
+    h264Encodings[0] = video ? H264_ENCODING : 0;
+    if (!registered) {
+        rfbClientRegisterExtension(&h264Extension);
+        registered = true;
+    }
+}
+
 static void setCallbacks(rfbClient *client) {
     client->GetPassword = onGetPassword;
     client->GetCredential = onGetCredential;
@@ -459,7 +526,7 @@ JNIEXPORT void JNICALL
 Java_com_gaurav_avnc_vnc_VncClient_nativeConfigure(JNIEnv * /*env*/, jobject /*thiz*/, jlong client_ptr,
                                                    jint securityType, jboolean use_local_cursor, jint image_quality,
                                                    jboolean use_raw_encoding, jint device_scale,
-                                                   jboolean audio) {
+                                                   jboolean audio, jboolean video) {
     auto client = (rfbClient *) client_ptr;
 
     // 0 means all auth types
@@ -475,6 +542,7 @@ Java_com_gaurav_avnc_vnc_VncClient_nativeConfigure(JNIEnv * /*env*/, jobject /*t
 
     announceDeviceScale(device_scale);
     configureAudio(client, audio);
+    configureVideo(video);
 
     client->appData.qualityLevel = image_quality;
     if (use_raw_encoding)

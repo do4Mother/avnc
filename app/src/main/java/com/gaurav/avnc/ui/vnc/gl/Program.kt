@@ -20,7 +20,7 @@ import com.gaurav.avnc.BuildConfig
 /**
  * Represents the GL program used for Frame rendering.
  */
-class Program {
+class Program(vertexShader: String = Shaders.VERTEX_SHADER, fragmentShader: String = Shaders.FRAGMENT_SHADER) {
 
     companion object {
         // Attribute constants
@@ -30,14 +30,24 @@ class Program {
         // Uniform constants
         const val U_PROJECTION = "u_Projection"
         const val U_TEXTURE_UNIT = "u_TextureUnit"
+        const val U_TEX_MATRIX = "u_TexMatrix"
     }
 
-    val program = ShaderCompiler.buildProgram(Shaders.VERTEX_SHADER, Shaders.FRAGMENT_SHADER)
+    val program = ShaderCompiler.buildProgram(vertexShader, fragmentShader)
     val aPositionLocation = glGetAttribLocation(program, A_POSITION)
     val aTextureCoordinatesLocation = glGetAttribLocation(program, A_TEXTURE_COORDINATES)
     private val uProjectionLocation = glGetUniformLocation(program, U_PROJECTION)
     private val uTexUnitLocation = glGetUniformLocation(program, U_TEXTURE_UNIT)
+    private val uTexMatrixLocation = glGetUniformLocation(program, U_TEX_MATRIX)
     private var validated = false
+
+    /**
+     * Texture coordinate transform (video program only).
+     */
+    fun setTexMatrix(matrix: FloatArray) {
+        if (uTexMatrixLocation >= 0)
+            glUniformMatrix4fv(uTexMatrixLocation, 1, false, matrix, 0)
+    }
 
 
     fun setUniforms(projectionMatrix: FloatArray) {
