@@ -429,7 +429,13 @@ static const uint32_t H264_MAX_FRAME = 16 * 1024 * 1024;
  * pointer"); relevant when it captures on the GPU, where the cursor could only be drawn in.
  */
 static const int HIDE_CURSOR_ENCODING = 0x53440001;
-static int h264Encodings[3] = {0, 0, 0};
+/**
+ * Private pseudo-encoding: VIDEO_QUALITY_ENCODING | short edge in pixels asks the server for
+ * an H.264 picture of that quality (360/720/1080/1440); the desktop keeps its size and the
+ * smaller picture is stretched over it.
+ */
+static const int VIDEO_QUALITY_ENCODING = 0x53450000;
+static int h264Encodings[4] = {0, 0, 0, 0};
 
 static rfbBool h264HandleEncoding(rfbClient *client, rfbFramebufferUpdateRectHeader *rect) {
     if (rect->encoding != (uint32_t) H264_ENCODING)
@@ -484,11 +490,12 @@ static rfbBool h264HandleEncoding(rfbClient *client, rfbFramebufferUpdateRectHea
 
 static rfbClientProtocolExtension h264Extension = {h264Encodings, h264HandleEncoding, nullptr};
 
-static void configureVideo(bool video, bool hideRemoteCursor) {
+static void configureVideo(bool video, bool hideRemoteCursor, int quality) {
     static bool registered = false;
     int n = 0;
     if (video) h264Encodings[n++] = H264_ENCODING;
     if (hideRemoteCursor) h264Encodings[n++] = HIDE_CURSOR_ENCODING;
+    if (video && quality > 0 && quality <= 0xFFFF) h264Encodings[n++] = VIDEO_QUALITY_ENCODING | quality;
     h264Encodings[n] = 0;
     if (!registered) {
         rfbClientRegisterExtension(&h264Extension);
@@ -540,7 +547,8 @@ JNIEXPORT void JNICALL
 Java_com_gaurav_avnc_vnc_VncClient_nativeConfigure(JNIEnv * /*env*/, jobject /*thiz*/, jlong client_ptr,
                                                    jint securityType, jboolean use_local_cursor, jint image_quality,
                                                    jboolean use_raw_encoding, jint device_scale,
-                                                   jboolean audio, jboolean video, jboolean hide_remote_cursor) {
+                                                   jboolean audio, jboolean video, jboolean hide_remote_cursor,
+                                                   jint video_quality) {
     auto client = (rfbClient *) client_ptr;
 
     // 0 means all auth types
@@ -556,7 +564,7 @@ Java_com_gaurav_avnc_vnc_VncClient_nativeConfigure(JNIEnv * /*env*/, jobject /*t
 
     announceDeviceScale(device_scale);
     configureAudio(client, audio);
-    configureVideo(video, hide_remote_cursor);
+    configureVideo(video, hide_remote_cursor, video_quality);
 
     client->appData.qualityLevel = image_quality;
     if (use_raw_encoding)

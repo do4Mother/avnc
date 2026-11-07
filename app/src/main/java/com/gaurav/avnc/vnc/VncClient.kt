@@ -161,12 +161,13 @@ class VncClient(private val observer: Observer) {
      * @param hideRemoteCursor Ask the server to keep its cursor out of the picture.
      */
     fun configure(securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, remoteScale: Int = 0,
-                  audio: Boolean = false, video: Boolean = false, hideRemoteCursor: Boolean = false) {
+                  audio: Boolean = false, video: Boolean = false, hideRemoteCursor: Boolean = false,
+                  videoQuality: Int = 0) {
         stateLock.read {
             if (!connected && !destroyed) {
                 val deviceScale = if (remoteScale > 0) remoteScale
                 else (Resources.getSystem().displayMetrics.density * 100).roundToInt()
-                nativeConfigure(nativePtr, securityType, useLocalCursor, imageQuality, useRawEncoding, deviceScale, audio, video, hideRemoteCursor)
+                nativeConfigure(nativePtr, securityType, useLocalCursor, imageQuality, useRawEncoding, deviceScale, audio, video, hideRemoteCursor, videoQuality)
             }
         }
     }
@@ -383,7 +384,7 @@ class VncClient(private val observer: Observer) {
     }
 
     private external fun nativeClientCreate(): Long
-    private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, deviceScale: Int, audio: Boolean, video: Boolean, hideRemoteCursor: Boolean)
+    private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, deviceScale: Int, audio: Boolean, video: Boolean, hideRemoteCursor: Boolean, videoQuality: Int)
     private external fun nativeInit(clientPtr: Long, host: String, port: Int): Boolean
     private external fun nativeSetDest(clientPtr: Long, host: String, port: Int)
     private external fun nativeProcessServerMessage(clientPtr: Long): Boolean
