@@ -76,7 +76,8 @@ class Renderer(val viewModel: VncViewModel) : GLSurfaceView.Renderer {
     }
 
     private val projectionMatrix = FloatArray(16)
-    private val drawCursor = !viewModel.pref.input.hideRemoteCursor
+    /** The pointer this app draws ("local" to the user; "remote" is the one inside the picture). */
+    private val drawCursor = !viewModel.pref.input.hideLocalCursor
     private lateinit var program: Program
     private lateinit var frame: Frame
     private lateinit var cursor: Cursor

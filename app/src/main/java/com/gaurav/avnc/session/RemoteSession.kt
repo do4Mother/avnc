@@ -25,7 +25,7 @@ import kotlin.concurrent.thread
  * It can be stopped by calling [stop]. It will be automatically stopped when
  * remote server closes the connection  or an error occurs.
  */
-class RemoteSession(private val observer: Observer) {
+class RemoteSession(private val observer: Observer, private val hideRemoteCursor: () -> Boolean = { false }) {
 
     interface Observer : VncClient.Observer, SshClient.Observer {
         fun onConnecting()
@@ -146,7 +146,7 @@ class RemoteSession(private val observer: Observer) {
     private fun configureClient(vncClient: VncClient, profile: ServerProfile) {
         vncClient.configure(profile.securityType, true  /* Hardcoded to true */,
                             profile.imageQuality, profile.useRawEncoding, profile.remoteScale, profile.audio,
-                            profile.video)
+                            profile.video, hideRemoteCursor())
 
         if (profile.useRepeater)
             vncClient.setupRepeater(profile.idOnRepeater)

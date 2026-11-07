@@ -120,7 +120,7 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
 
     var client: VncClient? = null
 
-    private val session = RemoteSession(RemoteSessionObserver())
+    private val session = RemoteSession(RemoteSessionObserver()) { pref.input.hideRemoteCursor }
 
     /**
      * We have two places for connection state (both are synced):
@@ -652,6 +652,12 @@ class VncViewModel(app: Application) : BaseViewModel(app) {
 
         override fun onVideoFrame(data: ByteArray, flags: Int, width: Int, height: Int) {
             // Called on the VNC receiver thread; the decoder queues the frame on its own thread.
+            if (data.isEmpty() && flags and 2 != 0) {
+                // The video stream ended; the framebuffer texture is drawn again.
+                stopVideo()
+                refreshFrameView()
+                return
+            }
             val decoder = videoDecoder ?: VideoDecoder { messenger?.refreshFrameBuffer() }.also {
                 it.setSurface(videoSurface)
                 videoDecoder = it

@@ -157,16 +157,16 @@ class VncClient(private val observer: Observer) {
      * @param securityType RFB security type to use.
      * @param remoteScale Scale (percent) announced to the server; 0 uses the display density.
      * @param audio Ask the server for desktop audio (QEMU audio extension).
-     * @param video Offer the Open H.264 encoding, so a server that can encode video sends it
-     *              (without the cursor in the picture: this client draws the pointer itself).
+     * @param video Offer the Open H.264 encoding, so a server that can encode video sends it.
+     * @param hideRemoteCursor Ask the server to keep its cursor out of the picture.
      */
     fun configure(securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, remoteScale: Int = 0,
-                  audio: Boolean = false, video: Boolean = false) {
+                  audio: Boolean = false, video: Boolean = false, hideRemoteCursor: Boolean = false) {
         stateLock.read {
             if (!connected && !destroyed) {
                 val deviceScale = if (remoteScale > 0) remoteScale
                 else (Resources.getSystem().displayMetrics.density * 100).roundToInt()
-                nativeConfigure(nativePtr, securityType, useLocalCursor, imageQuality, useRawEncoding, deviceScale, audio, video)
+                nativeConfigure(nativePtr, securityType, useLocalCursor, imageQuality, useRawEncoding, deviceScale, audio, video, hideRemoteCursor)
             }
         }
     }
@@ -383,7 +383,7 @@ class VncClient(private val observer: Observer) {
     }
 
     private external fun nativeClientCreate(): Long
-    private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, deviceScale: Int, audio: Boolean, video: Boolean)
+    private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, deviceScale: Int, audio: Boolean, video: Boolean, hideRemoteCursor: Boolean)
     private external fun nativeInit(clientPtr: Long, host: String, port: Int): Boolean
     private external fun nativeSetDest(clientPtr: Long, host: String, port: Int)
     private external fun nativeProcessServerMessage(clientPtr: Long): Boolean
@@ -439,7 +439,9 @@ class VncClient(private val observer: Observer) {
 
     @Keep
     private fun cbVideoFrame(data: ByteArray, flags: Int, width: Int, height: Int) {
-        videoMode = true
+        // An empty rect with "reset all contexts": the server stopped sending video and the
+        // framebuffer is painted again from here on.
+        videoMode = !(data.isEmpty() && flags and 2 != 0)
         observer.onVideoFrame(data, flags, width, height)
     }
 
