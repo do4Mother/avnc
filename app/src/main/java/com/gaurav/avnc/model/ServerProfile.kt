@@ -198,6 +198,14 @@ data class ServerProfile(
         var video: Boolean = true,
 
         /**
+         * Video quality asked of the server: the H.264 picture's short edge in pixels
+         * (360, 720, 1080, 1440). 0 means the full screen. The desktop keeps its size;
+         * a smaller picture is stretched over it.
+         */
+        @ColumnInfo(defaultValue = "0")
+        var videoQuality: Int = 0,
+
+        /**
          * These values are used for SSH Tunnel
          */
         var sshHost: String = "",

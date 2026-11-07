@@ -358,11 +358,37 @@
                     <CheckBox
                         android:id="@+id/video"
                         style="@style/FormField.CheckBox"
-                        android:checked="@={viewModel.profile.video}"
+                        android:checked="@={viewModel.video}"
                         android:text="@string/title_video"
                         app:layout_constraintEnd_toEndOf="parent"
                         app:layout_constraintStart_toStartOf="parent"
                         app:layout_constraintTop_toBottomOf="@id/audio" />
+
+                    <!--Video quality-->
+                    <TextView
+                        android:id="@+id/video_quality_label"
+                        style="@style/FormField.LabelWithIcon"
+                        android:enabled="@{viewModel.video}"
+                        android:labelFor="@id/video_quality"
+                        android:text="@string/title_video_quality"
+                        app:drawableStartCompat="@drawable/ic_zoom_in"
+                        app:layout_constraintBottom_toBottomOf="@id/video_quality"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toTopOf="@id/video_quality" />
+
+                    <com.gaurav.avnc.util.SpinnerEx
+                        android:id="@+id/video_quality"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:enabled="@{viewModel.video}"
+                        android:minHeight="@dimen/action_btn_size"
+                        app:layout_constraintEnd_toEndOf="parent"
+                        app:layout_constraintStart_toStartOf="@id/remote_scale"
+                        app:layout_constraintTop_toBottomOf="@id/video"
+                        app:value="@={viewModel.profile.videoQuality}"
+                        app:valueLabels="@{ @stringArray/profile_editor_video_quality_labels }"
+                        app:values="@{ @stringArray/profile_editor_video_quality_values }"
+                        tools:entries="@array/dummy_array" />
 
 
                     <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
@@ -385,7 +411,7 @@
                         android:minHeight="@dimen/action_btn_size"
                         app:layout_constraintEnd_toEndOf="parent"
                         app:layout_constraintStart_toStartOf="@id/remote_scale"
-                        app:layout_constraintTop_toBottomOf="@id/video"
+                        app:layout_constraintTop_toBottomOf="@id/video_quality"
                         app:value="@={viewModel.profile.securityType}"
                         app:valueLabels="@{ @stringArray/profile_editor_security_labels }"
                         app:values="@{ @stringArray/profile_editor_security_values }"

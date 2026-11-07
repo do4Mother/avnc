@@ -34,6 +34,7 @@ class EditorViewModel(app: Application, state: SavedStateHandle, initialProfile:
     val useRepeater = state.getLiveData("useRepeater", profile.useRepeater)
     val idOnRepeater = state.getLiveData("idOnRepeater", if (profile.useRepeater) profile.idOnRepeater.toString() else "")
     val useRawEncoding = state.getLiveData("useRawEncoding", profile.useRawEncoding)
+    val video = state.getLiveData("video", profile.video)
     val enableWol = state.getLiveData("enableWol", profile.enableWol)
     val useSshTunnel = state.getLiveData("useSshTunnel", profile.channelType == ServerProfile.CHANNEL_SSH_TUNNEL)
     val sshUsePassword = state.getLiveData("sshUsePassword", profile.sshAuthType == ServerProfile.SSH_AUTH_PASSWORD)
@@ -45,6 +46,7 @@ class EditorViewModel(app: Application, state: SavedStateHandle, initialProfile:
         profile.useRepeater = useRepeater.value == true
         profile.idOnRepeater = idOnRepeater.value?.toIntOrNull() ?: 0
         profile.useRawEncoding = useRawEncoding.value == true
+        profile.video = video.value == true
         profile.enableWol = enableWol.value == true
         profile.channelType = if (useSshTunnel.value == true) ServerProfile.CHANNEL_SSH_TUNNEL else ServerProfile.CHANNEL_TCP
         profile.sshAuthType = if (sshUsePassword.value == true) ServerProfile.SSH_AUTH_PASSWORD else ServerProfile.SSH_AUTH_KEY
