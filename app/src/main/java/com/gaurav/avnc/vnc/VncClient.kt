@@ -150,14 +150,15 @@ class VncClient(private val observer: Observer) {
      * @param remoteScale Scale (percent) announced to the server; 0 uses the display density.
      * @param audio Ask the server for desktop audio (QEMU audio extension).
      * @param video Offer the Open H.264 encoding, so a server that can encode video sends it.
+     * @param hideCursor Tell the server this client shows no cursor, so video comes without one.
      */
     fun configure(securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, remoteScale: Int = 0,
-                  audio: Boolean = false, video: Boolean = false) {
+                  audio: Boolean = false, video: Boolean = false, hideCursor: Boolean = false) {
         stateLock.read {
             if (!connected && !destroyed) {
                 val deviceScale = if (remoteScale > 0) remoteScale
                 else (Resources.getSystem().displayMetrics.density * 100).roundToInt()
-                nativeConfigure(nativePtr, securityType, useLocalCursor, imageQuality, useRawEncoding, deviceScale, audio, video)
+                nativeConfigure(nativePtr, securityType, useLocalCursor, imageQuality, useRawEncoding, deviceScale, audio, video, hideCursor)
             }
         }
     }
@@ -374,7 +375,7 @@ class VncClient(private val observer: Observer) {
     }
 
     private external fun nativeClientCreate(): Long
-    private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, deviceScale: Int, audio: Boolean, video: Boolean)
+    private external fun nativeConfigure(clientPtr: Long, securityType: Int, useLocalCursor: Boolean, imageQuality: Int, useRawEncoding: Boolean, deviceScale: Int, audio: Boolean, video: Boolean, hideCursor: Boolean)
     private external fun nativeInit(clientPtr: Long, host: String, port: Int): Boolean
     private external fun nativeSetDest(clientPtr: Long, host: String, port: Int)
     private external fun nativeProcessServerMessage(clientPtr: Long): Boolean
