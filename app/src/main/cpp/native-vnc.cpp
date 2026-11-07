@@ -442,24 +442,30 @@ static rfbBool h264HandleEncoding(rfbClient *client, rfbFramebufferUpdateRectHea
         return FALSE;
     }
 
+    // Read into our own buffer first: the socket read may block, which must not happen
+    // while holding a JNI array.
+    char *data = nullptr;
+    if (len > 0) {
+        data = (char *) malloc(len);
+        if (!data) {
+            rfbClientErr("h264HandleEncoding: Unable to allocate memory for video data\n");
+            return FALSE;
+        }
+        if (!ReadFromRFBServer(client, data, len)) {
+            free(data);
+            return FALSE;
+        }
+    }
     auto env = context.getEnv();
     jbyteArray bytes = env->NewByteArray((jsize) len);
     if (!bytes) {
+        free(data);
         rfbClientErr("h264HandleEncoding: Unable to allocate memory for video data\n");
         return FALSE;
     }
     if (len > 0) {
-        auto data = (jbyte *) env->GetPrimitiveArrayCritical(bytes, nullptr);
-        if (!data) {
-            env->DeleteLocalRef(bytes);
-            return FALSE;
-        }
-        rfbBool ok = ReadFromRFBServer(client, (char *) data, len);
-        env->ReleasePrimitiveArrayCritical(bytes, data, 0);
-        if (!ok) {
-            env->DeleteLocalRef(bytes);
-            return FALSE;
-        }
+        env->SetByteArrayRegion(bytes, 0, (jsize) len, reinterpret_cast<const jbyte *>(data));
+        free(data);
     }
     env->CallVoidMethod(getManagedClient(client), context.cbVideoFrame, bytes, (jint) flags,
                         (jint) rect->r.w, (jint) rect->r.h);
